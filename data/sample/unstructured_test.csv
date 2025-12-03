@@ -1,0 +1,11 @@
+timestamp,ad_group,views,visits,orders,cost,sales_value,country,channel
+2024-01-01,Winter Sale,50000,1200,45,500,1200,USA,Facebook
+2024-01-02,Winter Sale,48000,1150,42,480,1100,USA,Facebook
+2024-01-03,Winter Sale,52000,1300,50,520,1350,UK,Google
+2024-01-04,Spring Launch,75000,2000,80,800,2400,Germany,Instagram
+2024-01-05,Spring Launch,72000,1900,75,780,2300,USA,Facebook
+2024-01-06,Flash Deals,30000,900,30,300,900,France,TikTok
+2024-01-07,Flash Deals,28000,850,28,280,850,UK,Google
+2024-01-08,Summer Preview,60000,1500,60,600,1800,USA,LinkedIn
+2024-01-09,Summer Preview,62000,1600,65,620,1950,Canada,Twitter
+2024-01-10,VIP Members,40000,1100,55,400,1650,USA,Email

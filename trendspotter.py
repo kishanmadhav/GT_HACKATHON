@@ -1,7 +1,9 @@
 """
 TrendSpotter - Complete Pipeline
 Generates PDF or PowerPoint reports with AI insights and charts
-Usage: python trendspotter.py [--pdf | --pptx]
+Usage: python trendspotter.py [INPUT_FILE] [--pdf | --pptx]
+
+Supports any CSV, JSON, or Parquet file - automatically normalizes columns
 """
 
 import os
@@ -20,6 +22,7 @@ from pptx.enum.text import PP_ALIGN
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for speed
 import matplotlib.pyplot as plt
+import re
 
 # Configuration
 API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -35,8 +38,167 @@ RED = '#DC3545'
 ORANGE = '#FFC107'
 
 
-def generate_charts(df, dates, campaigns):
-    """Generate charts using matplotlib (fast)"""
+# ==============================================================================
+# DATA NORMALIZER - Handles any CSV/JSON structure
+# ==============================================================================
+
+class DataNormalizer:
+    """Automatically maps any column structure to expected fields"""
+    
+    COLUMN_PATTERNS = {
+        'date': [r'date', r'day', r'time', r'timestamp', r'created', r'period', r'dt', r'report'],
+        'campaign_id': [r'campaign_id', r'camp_id', r'adgroup_id', r'ad_id', r'^id$', r'cid'],
+        'campaign_name': [r'campaign_name', r'name', r'title', r'ad_name', r'adgroup', r'ad_group', r'campaign$'],
+        'impressions': [r'impression', r'impr', r'views', r'imp', r'shows', r'reach', r'display'],
+        'clicks': [r'click', r'clk', r'visits', r'sessions', r'hits', r'tap'],
+        'conversions': [r'conversion', r'conv', r'purchase', r'order', r'lead', r'action', r'signup', r'install'],
+        'spend': [r'spend', r'cost', r'expense', r'budget', r'amount_spent', r'media_cost', r'ad_cost'],
+        'revenue': [r'revenue', r'income', r'sales', r'value', r'earning', r'gmv', r'amount', r'total'],
+        'region': [r'region', r'country', r'location', r'geo', r'territory', r'market', r'area', r'state', r'city'],
+        'platform': [r'platform', r'source', r'channel', r'network', r'medium', r'publisher', r'traffic']
+    }
+    
+    def __init__(self):
+        self.mapping = {}
+        self.metadata = {}
+    
+    def _match_column(self, col_name):
+        col_lower = col_name.lower().strip()
+        for standard, patterns in self.COLUMN_PATTERNS.items():
+            for p in patterns:
+                if re.search(p, col_lower):
+                    return standard
+        return None
+    
+    def _infer_type(self, df, col):
+        dtype = df[col].dtype
+        if dtype == pl.Date or dtype == pl.Datetime:
+            return 'date'
+        if dtype == pl.Utf8:
+            sample = str(df[col].drop_nulls().head(1)[0]) if len(df[col].drop_nulls()) > 0 else ''
+            if re.match(r'\d{4}-\d{2}-\d{2}', sample) or re.match(r'\d{2}/\d{2}/\d{4}', sample):
+                return 'date'
+            return 'text'
+        if dtype in [pl.Int64, pl.Int32, pl.Float64, pl.Float32]:
+            mean = df[col].mean()
+            if mean and mean > 100:
+                return 'metric_large'
+            return 'metric_small'
+        return 'unknown'
+    
+    def normalize(self, df):
+        """Normalize any dataframe to standard schema"""
+        self.mapping = {}
+        mapped = set()
+        unmapped = []
+        
+        # Pattern matching
+        for col in df.columns:
+            std = self._match_column(col)
+            if std and std not in mapped:
+                self.mapping[col] = std
+                mapped.add(std)
+            else:
+                unmapped.append(col)
+        
+        # Type inference for remaining
+        for col in unmapped[:]:
+            col_type = self._infer_type(df, col)
+            if col_type == 'date' and 'date' not in mapped:
+                self.mapping[col] = 'date'
+                mapped.add('date')
+                unmapped.remove(col)
+            elif col_type == 'metric_large' and 'impressions' not in mapped:
+                self.mapping[col] = 'impressions'
+                mapped.add('impressions')
+                unmapped.remove(col)
+        
+        # Rename mapped columns
+        result = df.rename({k: v for k, v in self.mapping.items()})
+        cols = set(result.columns)
+        synthetic = []
+        
+        # Create missing columns
+        if 'date' not in cols:
+            result = result.with_columns(pl.lit(datetime.now().strftime('%Y-%m-%d')).alias('date'))
+            synthetic.append('date')
+        elif result['date'].dtype == pl.Utf8:
+            try:
+                result = result.with_columns(pl.col('date').str.to_date().alias('date'))
+            except:
+                pass
+        
+        if 'campaign_name' not in cols:
+            if 'campaign_id' in cols:
+                result = result.with_columns(pl.col('campaign_id').cast(pl.Utf8).alias('campaign_name'))
+            else:
+                result = result.with_columns(pl.lit('Campaign_1').alias('campaign_name'))
+            synthetic.append('campaign_name')
+        
+        if 'campaign_id' not in cols:
+            result = result.with_columns(pl.arange(1, len(result)+1).cast(pl.Utf8).alias('campaign_id'))
+            synthetic.append('campaign_id')
+        
+        # Numeric defaults
+        for field, default in [('impressions', 0), ('clicks', 0), ('conversions', 0), 
+                               ('spend', 0.0), ('revenue', 0.0)]:
+            if field not in result.columns:
+                # Try to use an unmapped numeric column
+                found = False
+                for col in unmapped[:]:
+                    if col in result.columns and result[col].dtype in [pl.Int64, pl.Int32, pl.Float64, pl.Float32]:
+                        result = result.rename({col: field})
+                        unmapped.remove(col)
+                        found = True
+                        break
+                if not found:
+                    result = result.with_columns(pl.lit(default).alias(field))
+                    synthetic.append(field)
+        
+        if 'region' not in result.columns:
+            result = result.with_columns(pl.lit('Unknown').alias('region'))
+            synthetic.append('region')
+        if 'platform' not in result.columns:
+            result = result.with_columns(pl.lit('Unknown').alias('platform'))
+            synthetic.append('platform')
+        
+        self.metadata = {
+            'mapping': self.mapping,
+            'synthetic': synthetic,
+            'original_cols': df.columns
+        }
+        
+        return result
+
+
+def load_data(file_path):
+    """Load and normalize any CSV/JSON/Parquet file"""
+    ext = file_path.lower().split('.')[-1]
+    
+    if ext == 'csv':
+        df = pl.read_csv(file_path, try_parse_dates=True)
+    elif ext == 'json':
+        try:
+            df = pl.read_json(file_path)
+        except:
+            df = pl.read_ndjson(file_path)
+    elif ext == 'parquet':
+        df = pl.read_parquet(file_path)
+    else:
+        raise ValueError(f"Unsupported: {ext}. Use CSV, JSON, or Parquet.")
+    
+    normalizer = DataNormalizer()
+    normalized = normalizer.normalize(df)
+    
+    return normalized, normalizer.metadata
+
+
+# ==============================================================================
+# CHART GENERATION
+# ==============================================================================
+
+def generate_charts(df, dates, campaigns, metadata):
+    """Generate charts using matplotlib - handles any data structure"""
     os.makedirs(CHARTS_DIR, exist_ok=True)
     
     # Daily aggregation
@@ -47,22 +209,30 @@ def generate_charts(df, dates, campaigns):
         pl.col('spend').sum()
     ]).sort('date')
     
-    d_dates = daily['date'].to_list()
+    d_dates = [str(d) for d in daily['date'].to_list()]  # Convert to strings
     d_imp = daily['impressions'].to_list()
     d_rev = daily['revenue'].to_list()
     d_spend = daily['spend'].to_list()
     d_clicks = daily['clicks'].to_list()
     
+    # Format date labels
+    def format_date(d):
+        if len(d) >= 10:
+            return d[5:10]  # MM-DD
+        return d[-5:] if len(d) >= 5 else d
+    
     # Chart 1: Dashboard (2x2)
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     fig.suptitle('Performance Dashboard', fontsize=16, fontweight='bold', color=BLUE)
+    
+    step = max(1, len(d_dates) // 5)  # Show ~5 x-labels
     
     # Impressions trend
     axes[0, 0].fill_between(range(len(d_dates)), d_imp, alpha=0.3, color=BLUE)
     axes[0, 0].plot(d_imp, color=BLUE, linewidth=2, marker='o', markersize=4)
     axes[0, 0].set_title('Daily Impressions', fontweight='bold')
-    axes[0, 0].set_xticks(range(0, len(d_dates), 3))
-    axes[0, 0].set_xticklabels([d_dates[i][-5:] for i in range(0, len(d_dates), 3)], rotation=45)
+    axes[0, 0].set_xticks(range(0, len(d_dates), step))
+    axes[0, 0].set_xticklabels([format_date(d_dates[i]) for i in range(0, len(d_dates), step)], rotation=45)
     axes[0, 0].grid(True, alpha=0.3)
     
     # Revenue vs Spend
@@ -72,16 +242,16 @@ def generate_charts(df, dates, campaigns):
     axes[0, 1].bar([i + width/2 for i in x], d_spend, width, label='Spend', color=RED)
     axes[0, 1].set_title('Revenue vs Spend', fontweight='bold')
     axes[0, 1].legend()
-    axes[0, 1].set_xticks(range(0, len(d_dates), 3))
-    axes[0, 1].set_xticklabels([d_dates[i][-5:] for i in range(0, len(d_dates), 3)], rotation=45)
+    axes[0, 1].set_xticks(range(0, len(d_dates), step))
+    axes[0, 1].set_xticklabels([format_date(d_dates[i]) for i in range(0, len(d_dates), step)], rotation=45)
     axes[0, 1].grid(True, alpha=0.3)
     
     # Clicks trend
     axes[1, 0].fill_between(range(len(d_dates)), d_clicks, alpha=0.3, color=PURPLE)
     axes[1, 0].plot(d_clicks, color=PURPLE, linewidth=2, marker='o', markersize=4)
     axes[1, 0].set_title('Daily Clicks', fontweight='bold')
-    axes[1, 0].set_xticks(range(0, len(d_dates), 3))
-    axes[1, 0].set_xticklabels([d_dates[i][-5:] for i in range(0, len(d_dates), 3)], rotation=45)
+    axes[1, 0].set_xticks(range(0, len(d_dates), step))
+    axes[1, 0].set_xticklabels([format_date(d_dates[i]) for i in range(0, len(d_dates), step)], rotation=45)
     axes[1, 0].grid(True, alpha=0.3)
     
     # ROI trend
@@ -90,8 +260,8 @@ def generate_charts(df, dates, campaigns):
     axes[1, 1].axhline(y=np.mean(d_roi), color='gray', linestyle='--', label=f'Avg: {np.mean(d_roi):.0f}%')
     axes[1, 1].set_title('Daily ROI %', fontweight='bold')
     axes[1, 1].legend()
-    axes[1, 1].set_xticks(range(0, len(d_dates), 3))
-    axes[1, 1].set_xticklabels([d_dates[i][-5:] for i in range(0, len(d_dates), 3)], rotation=45)
+    axes[1, 1].set_xticks(range(0, len(d_dates), step))
+    axes[1, 1].set_xticklabels([format_date(d_dates[i]) for i in range(0, len(d_dates), step)], rotation=45)
     axes[1, 1].grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -102,13 +272,14 @@ def generate_charts(df, dates, campaigns):
     fig, ax = plt.subplots(figsize=(10, 5))
     camp_names = campaigns['campaign_name'].to_list()
     camp_rev = campaigns['revenue'].to_list()
-    colors = [BLUE, PURPLE, GREEN, ORANGE, RED][:len(camp_names)]
-    bars = ax.bar(camp_names, camp_rev, color=colors)
+    colors = [BLUE, PURPLE, GREEN, ORANGE, RED] * (len(camp_names) // 5 + 1)
+    bars = ax.bar(camp_names[:10], camp_rev[:10], color=colors[:min(10, len(camp_names))])  # Limit to 10
     ax.set_title('Revenue by Campaign', fontsize=14, fontweight='bold', color=BLUE)
     ax.set_ylabel('Revenue ($)')
-    for bar, val in zip(bars, camp_rev):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1000, 
-                f'${val:,.0f}', ha='center', va='bottom', fontsize=9)
+    for bar, val in zip(bars, camp_rev[:10]):
+        if val > 0:
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(camp_rev)*0.02, 
+                    f'${val:,.0f}', ha='center', va='bottom', fontsize=9)
     plt.xticks(rotation=15)
     plt.grid(True, alpha=0.3, axis='y')
     plt.tight_layout()
@@ -460,57 +631,88 @@ def generate_pptx(data):
 def main():
     start_time = time.time()
     
-    # Check command line args
-    output_format = 'pdf'  # default
-    if len(sys.argv) > 1:
-        if sys.argv[1] in ['--pptx', '-p', 'pptx', 'ppt']:
-            output_format = 'pptx'
-        elif sys.argv[1] in ['--pdf', 'pdf']:
-            output_format = 'pdf'
-        elif sys.argv[1] in ['--help', '-h']:
-            print("TrendSpotter - Automated Report Generator")
-            print("\nUsage: python trendspotter.py [--pdf | --pptx]")
-            print("\nOptions:")
-            print("  --pdf   Generate PDF report (default)")
-            print("  --pptx  Generate PowerPoint report")
-            return
+    # Parse command line args
+    output_format = 'pdf'
+    input_file = INPUT_FILE
     
-    print("=" * 50)
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg in ['--pptx', '-p', 'pptx', 'ppt']:
+            output_format = 'pptx'
+        elif arg in ['--pdf', 'pdf']:
+            output_format = 'pdf'
+        elif arg in ['--help', '-h']:
+            print("TrendSpotter - Automated Report Generator")
+            print("\nUsage: python trendspotter.py [INPUT_FILE] [--pdf | --pptx]")
+            print("\nSupports any CSV, JSON, or Parquet file with any column structure.")
+            print("Columns are automatically mapped to: date, campaign_name, impressions,")
+            print("clicks, conversions, spend, revenue, region, platform")
+            print("\nOptions:")
+            print("  INPUT_FILE  Path to data file (default: data/sample/ad_performance.csv)")
+            print("  --pdf       Generate PDF report (default)")
+            print("  --pptx      Generate PowerPoint report")
+            print("\nExamples:")
+            print("  python trendspotter.py mydata.csv --pdf")
+            print("  python trendspotter.py export.json --pptx")
+            return
+        elif arg.endswith(('.csv', '.json', '.parquet')):
+            input_file = arg
+    
+    print("=" * 60)
     print(f"TRENDSPOTTER - Generating {output_format.upper()}")
-    print("=" * 50)
+    print("=" * 60)
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(CHARTS_DIR, exist_ok=True)
     
-    # Step 1: Load Data
-    print("\n[1/6] Loading Data...")
-    df = pl.read_csv(INPUT_FILE)
-    print(f"      ✓ {len(df)} records loaded")
+    # Step 1: Load & Normalize Data
+    print(f"\n[1/6] Loading Data from {input_file}...")
+    df, metadata = load_data(input_file)
+    print(f"      Loaded {len(df)} records")
+    if metadata.get('mapping'):
+        print(f"      Column mapping: {metadata['mapping']}")
+    if metadata.get('synthetic'):
+        print(f"      Synthetic columns created: {metadata['synthetic']}")
     
     # Step 2: Calculate Metrics
     print("[2/6] Calculating Metrics...")
-    df = df.with_columns([
-        (pl.col('clicks') / pl.col('impressions') * 100).round(2).alias('ctr'),
-        ((pl.col('revenue') - pl.col('spend')) / pl.col('spend') * 100).round(2).alias('roi')
-    ])
-    print("      ✓ CTR, ROI calculated")
+    # Safely calculate metrics (handle zero division)
+    if df['impressions'].sum() > 0:
+        df = df.with_columns(
+            (pl.col('clicks') / pl.col('impressions') * 100).fill_nan(0).round(2).alias('ctr')
+        )
+    else:
+        df = df.with_columns(pl.lit(0.0).alias('ctr'))
+    
+    if df['spend'].sum() > 0:
+        df = df.with_columns(
+            ((pl.col('revenue') - pl.col('spend')) / pl.col('spend') * 100).fill_nan(0).round(2).alias('roi')
+        )
+    else:
+        df = df.with_columns(pl.lit(0.0).alias('roi'))
+    print("      CTR, ROI calculated")
     
     # Step 3: Detect Anomalies
     print("[3/6] Detecting Anomalies...")
     features = df.select(['impressions', 'clicks', 'spend', 'revenue']).to_numpy()
-    iso_forest = IsolationForest(contamination=0.1, random_state=42, n_estimators=50)
-    predictions = iso_forest.fit_predict(features)
-    df = df.with_columns(pl.Series('is_anomaly', predictions == -1))
     
+    # Only run anomaly detection if we have enough data and variance
     anomalies = []
-    for row in df.filter(pl.col('is_anomaly')).iter_rows(named=True):
-        anomalies.append({
-            'campaign': row['campaign_name'],
-            'date': str(row['date']),
-            'region': row['region'],
-            'desc': f"{row['campaign_name']} - unusual metrics on {row['date']} ({row['region']})"
-        })
-    print(f"      ✓ {len(anomalies)} anomalies found")
+    if len(df) >= 10 and np.std(features) > 0:
+        iso_forest = IsolationForest(contamination=0.1, random_state=42, n_estimators=50)
+        predictions = iso_forest.fit_predict(features)
+        df = df.with_columns(pl.Series('is_anomaly', predictions == -1))
+        
+        for row in df.filter(pl.col('is_anomaly')).iter_rows(named=True):
+            anomalies.append({
+                'campaign': row['campaign_name'],
+                'date': str(row['date']),
+                'region': row.get('region', 'Unknown'),
+                'desc': f"{row['campaign_name']} - unusual metrics on {row['date']}"
+            })
+    else:
+        df = df.with_columns(pl.lit(False).alias('is_anomaly'))
+    print(f"      {len(anomalies)} anomalies found")
     
     # Step 4: Calculate KPIs & Aggregations
     print("[4/6] Aggregating Data...")
@@ -521,8 +723,8 @@ def main():
         'revenue': float(df['revenue'].sum()),
         'spend': float(df['spend'].sum()),
     }
-    kpis['roi'] = ((kpis['revenue'] - kpis['spend']) / kpis['spend'] * 100)
-    kpis['ctr'] = (kpis['clicks'] / kpis['impressions'] * 100)
+    kpis['roi'] = ((kpis['revenue'] - kpis['spend']) / kpis['spend'] * 100) if kpis['spend'] > 0 else 0
+    kpis['ctr'] = (kpis['clicks'] / kpis['impressions'] * 100) if kpis['impressions'] > 0 else 0
     
     campaigns = df.group_by('campaign_name').agg([
         pl.col('impressions').sum(),
@@ -531,44 +733,55 @@ def main():
         pl.col('spend').sum()
     ]).sort('revenue', descending=True)
     
-    dates = sorted(df['date'].unique().to_list())
-    print(f"      ✓ KPIs calculated, {len(campaigns)} campaigns")
+    dates = sorted([str(d) for d in df['date'].unique().to_list()])
+    print(f"      KPIs calculated, {len(campaigns)} campaigns")
     
     # Step 5: Generate Charts
     print("[5/6] Generating Charts...")
-    charts = generate_charts(df, dates, campaigns)
-    print("      ✓ Charts generated")
+    charts = generate_charts(df, dates, campaigns, metadata)
+    print("      Charts generated")
     
     # Step 6: AI Analysis
     print("[6/6] AI Analysis...")
-    client = OpenAI(api_key=API_KEY)
     
-    context = f"""AdTech Data ({dates[0]} to {dates[-1]}):
+    if API_KEY:
+        client = OpenAI(api_key=API_KEY)
+        
+        context = f"""Data Analysis ({dates[0]} to {dates[-1]}):
 - Impressions: {kpis['impressions']:,}, Clicks: {kpis['clicks']:,}, Conversions: {kpis['conversions']:,}
 - Revenue: ${kpis['revenue']:,.0f}, Spend: ${kpis['spend']:,.0f}, ROI: {kpis['roi']:.1f}%
 - Anomalies: {len(anomalies)}
-Campaigns: {', '.join([f"{r['campaign_name']} (${r['revenue']:,.0f})" for r in campaigns.iter_rows(named=True)])}"""
+Campaigns: {', '.join([f"{r['campaign_name']} (${r['revenue']:,.0f})" for r in campaigns.head(10).iter_rows(named=True)])}"""
 
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Senior Data Analyst. Write 100-word executive summary with key insights."},
-            {"role": "user", "content": context}
-        ],
-        max_tokens=200
-    )
-    summary = resp.choices[0].message.content
+        try:
+            resp = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Senior Data Analyst. Write 100-word executive summary with key insights."},
+                    {"role": "user", "content": context}
+                ],
+                max_tokens=200
+            )
+            summary = resp.choices[0].message.content
+            
+            resp2 = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Give exactly 4 one-sentence recommendations."},
+                    {"role": "user", "content": context}
+                ],
+                max_tokens=200
+            )
+            recs = [l.strip().lstrip('0123456789.-) ') for l in resp2.choices[0].message.content.split('\n') if l.strip() and len(l) > 10][:4]
+        except Exception as e:
+            print(f"      Warning: AI analysis failed ({e})")
+            summary = f"Data contains {len(df)} records across {len(campaigns)} campaigns with total revenue of ${kpis['revenue']:,.0f}."
+            recs = ["Review campaign performance", "Investigate anomalies", "Optimize underperforming campaigns", "Scale successful campaigns"]
+    else:
+        summary = f"Data contains {len(df)} records across {len(campaigns)} campaigns. Total revenue: ${kpis['revenue']:,.0f}, Total spend: ${kpis['spend']:,.0f}, ROI: {kpis['roi']:.1f}%."
+        recs = ["Review campaign performance", "Investigate anomalies", "Optimize underperforming campaigns", "Scale successful campaigns"]
     
-    resp2 = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Give exactly 4 one-sentence recommendations."},
-            {"role": "user", "content": context}
-        ],
-        max_tokens=200
-    )
-    recs = [l.strip().lstrip('0123456789.-) ') for l in resp2.choices[0].message.content.split('\n') if l.strip() and len(l) > 10][:4]
-    print("      ✓ AI analysis complete")
+    print("      AI analysis complete")
     
     # Prepare data for report
     report_data = {
@@ -589,10 +802,10 @@ Campaigns: {', '.join([f"{r['campaign_name']} (${r['revenue']:,.0f})" for r in c
         path = generate_pdf(report_data)
     
     elapsed = time.time() - start_time
-    print(f"\n{'='*50}")
-    print(f"✅ DONE in {elapsed:.1f} seconds!")
-    print(f"📄 Output: {path}")
-    print(f"{'='*50}")
+    print(f"\n{'='*60}")
+    print(f"DONE in {elapsed:.1f} seconds!")
+    print(f"Output: {path}")
+    print(f"{'='*60}")
     
     return path
 

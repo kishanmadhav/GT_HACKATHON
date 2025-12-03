@@ -6,7 +6,7 @@ A data pipeline that turns raw advertising data into executive-ready PDF or Powe
 
 Account Managers typically spend 4-6 hours per week pulling together performance reports manually. This tool automates the whole thing:
 
-- Reads advertising/marketing CSV data
+- Reads any CSV, JSON, or Parquet file (columns are auto-detected)
 - Detects anomalies using machine learning
 - Generates charts (impressions, revenue, ROI trends, etc.)
 - Creates an AI-written executive summary
@@ -75,7 +75,7 @@ OPENAI_API_KEY=your_key_here
 
 ### Run It
 
-Generate a PDF report:
+Generate a PDF report (uses sample data by default):
 ```bash
 python trendspotter.py --pdf
 ```
@@ -83,6 +83,12 @@ python trendspotter.py --pdf
 Generate a PowerPoint report:
 ```bash
 python trendspotter.py --pptx
+```
+
+Use your own data file:
+```bash
+python trendspotter.py your_data.csv --pdf
+python trendspotter.py export.json --pptx
 ```
 
 The report will be saved in the `output/` folder.
@@ -117,20 +123,44 @@ docker-compose up --build
 
 ## Input Data Format
 
-Your CSV should have these columns:
+The pipeline accepts **any CSV, JSON, or Parquet file**. It automatically detects and maps your columns to the expected fields using pattern matching. No need to rename your columns.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| date | Date | YYYY-MM-DD format |
-| campaign_id | String | Unique ID |
-| campaign_name | String | Display name |
-| impressions | Integer | Ad impressions |
-| clicks | Integer | Clicks |
-| conversions | Integer | Conversions |
-| spend | Float | Ad spend |
-| revenue | Float | Revenue generated |
-| region | String | Geographic region |
-| platform | String | Ad platform |
+### Auto-detected Column Mappings
+
+| Your Column Names | Maps To |
+|-------------------|---------|
+| date, timestamp, day, created, period | date |
+| campaign_name, name, title, ad_name, ad_group | campaign_name |
+| impressions, views, impr, shows, reach, display | impressions |
+| clicks, visits, sessions, hits, taps | clicks |
+| conversions, orders, purchases, leads, signups | conversions |
+| spend, cost, expense, budget, ad_cost | spend |
+| revenue, income, sales, value, earnings, amount | revenue |
+| region, country, location, geo, market, area | region |
+| platform, source, channel, network, medium | platform |
+
+If a column can't be mapped, the pipeline creates a synthetic one with default values. This means you can throw almost any data file at it and get a report.
+
+### Example: Different Data Formats
+
+Standard AdTech format:
+```csv
+date,campaign_name,impressions,clicks,spend,revenue
+2024-01-01,Winter Sale,50000,1200,500,1500
+```
+
+E-commerce format:
+```csv
+timestamp,ad_group,views,visits,cost,sales_value,country
+2024-01-01,Promo A,50000,1200,500,1500,USA
+```
+
+Analytics export:
+```json
+[{"day": "2024-01-01", "name": "Campaign X", "shows": 50000, "hits": 1200}]
+```
+
+All of these work without any changes.
 
 ## Performance
 
@@ -145,8 +175,8 @@ The pipeline runs in about 10 seconds on typical hardware:
 
 | Requirement | How |
 |-------------|-----|
-| Data ingestion (CSV/SQL) | Polars-based loader |
-| Data transformation | Metrics calculation, aggregation |
+| Data ingestion (CSV/JSON/DB) | Polars-based loader with auto-detection |
+| Data transformation | Auto column mapping, metrics calculation |
 | AI Integration | GPT-4o for summaries |
 | PDF/PPTX output | FPDF2 and python-pptx |
 | Automated | No manual steps needed |
