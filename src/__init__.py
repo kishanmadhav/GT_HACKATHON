@@ -1,0 +1,1 @@
+# TrendSpotter src package

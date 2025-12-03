@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  trendspotter:
+    build: .
+    container_name: trendspotter
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - INPUT_FOLDER=/app/data/input
+      - OUTPUT_FOLDER=/app/output
+    volumes:
+      # Mount input folder for file watching
+      - ./data/input:/app/data/input
+      # Mount output folder to access generated reports
+      - ./output:/app/output
+      # Mount sample data
+      - ./data/sample:/app/data/sample
+    # For watch mode, use this command:
+    # command: python src/main.py --watch data/input
+    
+    # Default: process sample data
+    command: python src/main.py data/sample/ad_performance.csv
+
+  # Optional: Watch mode service
+  trendspotter-watch:
+    build: .
+    container_name: trendspotter-watch
+    profiles:
+      - watch
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data/input:/app/data/input
+      - ./output:/app/output
+    command: python src/main.py --watch data/input
+    restart: unless-stopped
