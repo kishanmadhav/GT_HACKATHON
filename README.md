@@ -89,19 +89,43 @@ Use your own data file:
 ```bash
 python trendspotter.py your_data.csv --pdf
 python trendspotter.py export.json --pptx
+python trendspotter.py database.sqlite --pdf
 ```
 
 The report will be saved in the `output/` folder.
 
 ## Sample Data
 
-The repo includes sample AdTech data at `data/sample/ad_performance.csv` with 70 records covering:
+The repo includes multiple sample data files in different formats at `data/sample/`:
 
-- 5 campaigns (Brand Awareness, Retargeting, Product Launch, etc.)
-- 14 days of data
-- Metrics: impressions, clicks, conversions, spend, revenue
-- Regions: North America, Europe, Asia Pacific, Latin America
-- Platforms: Google Ads, Meta Ads, LinkedIn Ads
+| File | Format | Records | Description |
+|------|--------|---------|-------------|
+| `ad_performance.csv` | CSV | 70 | Standard AdTech data with all fields |
+| `marketing_export.csv` | CSV | 12 | Different column names (impr, clk, conv) |
+| `ecommerce_data.json` | JSON | 12 | E-commerce format (views, visits, orders) |
+| `analytics_export.ndjson` | NDJSON | 10 | Line-delimited JSON (shows, hits, actions) |
+| `campaign_db.sqlite` | SQLite | 10 | Database format with campaigns table |
+
+Each file uses different column naming conventions to demonstrate the auto-detection feature.
+
+### Testing Different Formats
+
+```bash
+# Standard CSV
+python trendspotter.py data/sample/ad_performance.csv --pdf
+
+# CSV with different column names
+python trendspotter.py data/sample/marketing_export.csv --pdf
+
+# JSON array
+python trendspotter.py data/sample/ecommerce_data.json --pdf
+
+# Newline-delimited JSON
+python trendspotter.py data/sample/analytics_export.ndjson --pdf
+
+# SQLite database
+python trendspotter.py data/sample/campaign_db.sqlite --pdf
+```
 
 ## What the Report Includes
 

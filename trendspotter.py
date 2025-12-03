@@ -172,7 +172,7 @@ class DataNormalizer:
 
 
 def load_data(file_path):
-    """Load and normalize any CSV/JSON/Parquet file"""
+    """Load and normalize any CSV/JSON/Parquet/SQLite file"""
     ext = file_path.lower().split('.')[-1]
     
     if ext == 'csv':
@@ -182,10 +182,21 @@ def load_data(file_path):
             df = pl.read_json(file_path)
         except:
             df = pl.read_ndjson(file_path)
+    elif ext == 'ndjson':
+        df = pl.read_ndjson(file_path)
     elif ext == 'parquet':
         df = pl.read_parquet(file_path)
+    elif ext in ['sqlite', 'db', 'sqlite3']:
+        import sqlite3
+        conn = sqlite3.connect(file_path)
+        # Get first table name
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1")
+        table_name = cursor.fetchone()[0]
+        df = pl.read_database(f"SELECT * FROM {table_name}", conn)
+        conn.close()
     else:
-        raise ValueError(f"Unsupported: {ext}. Use CSV, JSON, or Parquet.")
+        raise ValueError(f"Unsupported: {ext}. Use CSV, JSON, NDJSON, Parquet, or SQLite.")
     
     normalizer = DataNormalizer()
     normalized = normalizer.normalize(df)

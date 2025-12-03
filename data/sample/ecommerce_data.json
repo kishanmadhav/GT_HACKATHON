@@ -1,0 +1,14 @@
+[
+  {"timestamp": "2024-01-01", "ad_group": "Holiday Promo", "views": 45000, "visits": 1100, "orders": 40, "cost": 450, "sales_value": 1200, "country": "USA", "channel": "Facebook"},
+  {"timestamp": "2024-01-02", "ad_group": "Holiday Promo", "views": 47000, "visits": 1150, "orders": 42, "cost": 470, "sales_value": 1260, "country": "USA", "channel": "Facebook"},
+  {"timestamp": "2024-01-03", "ad_group": "Holiday Promo", "views": 43000, "visits": 1050, "orders": 38, "cost": 430, "sales_value": 1140, "country": "UK", "channel": "Google"},
+  {"timestamp": "2024-01-04", "ad_group": "New Year Sale", "views": 62000, "visits": 1800, "orders": 70, "cost": 700, "sales_value": 2100, "country": "Germany", "channel": "Instagram"},
+  {"timestamp": "2024-01-05", "ad_group": "New Year Sale", "views": 65000, "visits": 1900, "orders": 75, "cost": 730, "sales_value": 2250, "country": "USA", "channel": "Facebook"},
+  {"timestamp": "2024-01-06", "ad_group": "New Year Sale", "views": 58000, "visits": 1650, "orders": 62, "cost": 650, "sales_value": 1860, "country": "France", "channel": "TikTok"},
+  {"timestamp": "2024-01-07", "ad_group": "Flash Deal", "views": 28000, "visits": 800, "orders": 28, "cost": 280, "sales_value": 840, "country": "UK", "channel": "Google"},
+  {"timestamp": "2024-01-08", "ad_group": "Flash Deal", "views": 30000, "visits": 850, "orders": 30, "cost": 300, "sales_value": 900, "country": "Canada", "channel": "LinkedIn"},
+  {"timestamp": "2024-01-09", "ad_group": "VIP Exclusive", "views": 35000, "visits": 1000, "orders": 50, "cost": 350, "sales_value": 1500, "country": "USA", "channel": "Email"},
+  {"timestamp": "2024-01-10", "ad_group": "VIP Exclusive", "views": 38000, "visits": 1100, "orders": 55, "cost": 380, "sales_value": 1650, "country": "Australia", "channel": "Twitter"},
+  {"timestamp": "2024-01-11", "ad_group": "Weekend Special", "views": 52000, "visits": 1400, "orders": 48, "cost": 520, "sales_value": 1440, "country": "USA", "channel": "Facebook"},
+  {"timestamp": "2024-01-12", "ad_group": "Weekend Special", "views": 55000, "visits": 1500, "orders": 52, "cost": 550, "sales_value": 1560, "country": "Germany", "channel": "Instagram"}
+]

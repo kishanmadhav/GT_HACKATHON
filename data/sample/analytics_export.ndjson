@@ -1,0 +1,10 @@
+{"day":"2024-03-01","name":"Product Launch","shows":95000,"hits":2800,"actions":110,"expense":1100,"amount":3300,"area":"USA","medium":"paid_search"}
+{"day":"2024-03-02","name":"Product Launch","shows":98000,"hits":2900,"actions":115,"expense":1130,"amount":3450,"area":"UK","medium":"paid_social"}
+{"day":"2024-03-03","name":"Product Launch","shows":92000,"hits":2700,"actions":105,"expense":1070,"amount":3150,"area":"Germany","medium":"display"}
+{"day":"2024-03-04","name":"Email Campaign","shows":25000,"hits":1200,"actions":80,"expense":250,"amount":2400,"area":"USA","medium":"email"}
+{"day":"2024-03-05","name":"Email Campaign","shows":27000,"hits":1300,"actions":85,"expense":270,"amount":2550,"area":"Canada","medium":"email"}
+{"day":"2024-03-06","name":"Influencer Collab","shows":180000,"hits":6000,"actions":200,"expense":3000,"amount":6000,"area":"USA","medium":"influencer"}
+{"day":"2024-03-07","name":"Influencer Collab","shows":175000,"hits":5800,"actions":190,"expense":2900,"amount":5700,"area":"UK","medium":"influencer"}
+{"day":"2024-03-08","name":"SEO Traffic","shows":300000,"hits":8000,"actions":150,"expense":500,"amount":4500,"area":"Global","medium":"organic"}
+{"day":"2024-03-09","name":"SEO Traffic","shows":310000,"hits":8200,"actions":155,"expense":510,"amount":4650,"area":"Global","medium":"organic"}
+{"day":"2024-03-10","name":"Affiliate Program","shows":60000,"hits":2000,"actions":100,"expense":600,"amount":3000,"area":"USA","medium":"affiliate"}

@@ -1,0 +1,13 @@
+report_date,campaign,impr,clk,conv,media_cost,total_revenue,geo,traffic_source
+2024-02-01,Spring Collection,85000,2200,95,950,2850,North America,google_ads
+2024-02-02,Spring Collection,82000,2100,90,920,2700,North America,google_ads
+2024-02-03,Spring Collection,88000,2350,100,980,3000,Europe,meta_ads
+2024-02-04,Clearance Event,120000,3500,150,1200,4500,North America,google_ads
+2024-02-05,Clearance Event,115000,3300,140,1150,4200,Europe,meta_ads
+2024-02-06,Clearance Event,125000,3700,160,1250,4800,Asia Pacific,tiktok_ads
+2024-02-07,Brand Awareness,200000,4000,80,2000,2400,North America,youtube_ads
+2024-02-08,Brand Awareness,195000,3900,75,1950,2250,Europe,youtube_ads
+2024-02-09,Retargeting,40000,1800,120,400,3600,North America,meta_ads
+2024-02-10,Retargeting,42000,1900,130,420,3900,Europe,meta_ads
+2024-02-11,Mobile App Install,150000,5000,200,1500,0,North America,google_ads
+2024-02-12,Mobile App Install,155000,5200,210,1550,0,Asia Pacific,tiktok_ads
